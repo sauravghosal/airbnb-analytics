@@ -1,6 +1,6 @@
 *.ipynb
 *.csv
-
+airbnb-scrape/.aws-sam
 .vscode
 __pycache__
 .env
