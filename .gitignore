@@ -1,6 +1,9 @@
 *.ipynb
 *.csv
 airbnb-scrape/.aws-sam
+airbnb-scrape/scraper/chromedriver
+template.yaml
 .vscode
 __pycache__
 .env
+*.xlsx
