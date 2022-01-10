@@ -228,7 +228,15 @@ class Parser:
         features_list = []
         for index, page in enumerate(self.url_list):
             print(f'Extracting listings from page {index + 1}')
-            listings = extract_listings(page, self.proxies[index % len(self.proxies)])
+            listings = None
+            i = index
+            while listings is None:
+                proxy_config = self.proxies[i % len(self.proxies)]
+                proxy_config['headless'] = False
+                try: 
+                    listings = extract_listings(page, proxy_config)
+                except TimeoutError:
+                    i += 1
             for idx, listing in enumerate(listings):   
                 features = extract_listing_features(listing, RULES_SEARCH_PAGE)
                 features['sp_url'] = self.link
