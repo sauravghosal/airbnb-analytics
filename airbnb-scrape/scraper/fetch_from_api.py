@@ -90,6 +90,7 @@ def fetch_listings():
 
 def fetch_occupancy(id):
     sleep(randint(2, 30))
+    print(f'Fetching occupancy for property {id}')
     url = f"https://www.airbnb.com/api/v3/PdpAvailabilityCalendar?operationName=PdpAvailabilityCalendar&locale=en&currency=USD&_cb=0k1durf0yuu6g40ksqy0u1ha5jfo&variables={{\"request\":{{\"count\":6,\"listingId\":\"{id}\",\"month\":{datetime.today().month},\"year\":{datetime.today().year}}}}}&extensions={{\"persistedQuery\":{{\"version\":1,\"sha256Hash\":\"8f08e03c7bd16fcad3c92a3592c19a8b559a0d0855a84028d1163d4733ed9ade\"}}}}"
     data = requests.get(url, proxies=PROXY, headers=HEADERS).json()
     gen = find_occupancy(data)
