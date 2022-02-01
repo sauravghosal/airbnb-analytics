@@ -1,6 +1,9 @@
-from datetime import datetime
+from datetime import datetime, timedelta, date
 from inspect import cleandoc
 import json
+from random import randint
+from time import sleep
+from numpy import AxisError
 import pandas as pd 
 import requests
 import requests
@@ -85,17 +88,35 @@ def fetch_listings():
         for i, listing_df in enumerate(listings_each_location):
             listing_df.to_excel(writer, index=True, sheet_name=locations[i]['name'])
 
-def fetch_occupancy(id="48105812"):
+def fetch_occupancy(id):
+    sleep(randint(2, 30))
     url = f"https://www.airbnb.com/api/v3/PdpAvailabilityCalendar?operationName=PdpAvailabilityCalendar&locale=en&currency=USD&_cb=0k1durf0yuu6g40ksqy0u1ha5jfo&variables={{\"request\":{{\"count\":6,\"listingId\":\"{id}\",\"month\":{datetime.today().month},\"year\":{datetime.today().year}}}}}&extensions={{\"persistedQuery\":{{\"version\":1,\"sha256Hash\":\"8f08e03c7bd16fcad3c92a3592c19a8b559a0d0855a84028d1163d4733ed9ade\"}}}}"
     data = requests.get(url, proxies=PROXY, headers=HEADERS).json()
     gen = find_occupancy(data)
-    for occupancy in gen:
-        [occupancy.pop(key) for key in UNNECCESARY_OCC_KEYS]
-        print(occupancy)
+    bitmap = ''
+    for occ in gen:
+        [occ.pop(key) for key in UNNECCESARY_OCC_KEYS]
+        # Start accumulating occupancy data including today
+        if datetime.strptime(occ['calendarDate'], "%Y-%m-%d") <= datetime.now() - timedelta(days=1):
+            continue
+        # 0s correspond to availability
+        # if you want bitmap to be reflected by UI, will need to change from available to isBooked
+        if occ['available']:
+            bitmap = bitmap + '0'
+        # 1s correspond to bookings
+        if not occ['available']: 
+            bitmap = bitmap + '1'
+    return [id, bitmap]
 
 if __name__ == "__main__":
-    fetch_occupancy()
-
-            
-        
-        
+    # fetch_listings()
+    listing_dfs = pd.read_excel('tinyHouses.xlsx', sheet_name=None)
+    occ_dfs = []
+    for loc, df in listing_dfs.items():
+        occ = df.apply(lambda row: fetch_occupancy(row['id']), axis=1, result_type='expand')
+        occ.columns = ['id', 'bitmap']
+        occ.set_index('id', inplace=True)
+        occ_dfs.append(occ)
+    occ_dfs = pd.concat(occ_dfs)
+    with pd.ExcelWriter(f'{date.today():%m-%d-%Y}-occ-data.xlsx') as writer:
+        occ_dfs.to_excel(writer, index=True)
