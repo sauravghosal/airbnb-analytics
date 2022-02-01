@@ -1,3 +1,4 @@
+from datetime import datetime
 from inspect import cleandoc
 import json
 import pandas as pd 
@@ -5,7 +6,8 @@ import requests
 import requests
 
 
-UNNECCESARY_KEYS = ['contextualPictures', 'kickerContent', '__typename', 'formattedBadges']
+UNNECCESARY_LIST_KEYS = ['contextualPictures', 'kickerContent', '__typename', 'formattedBadges']
+UNNECCESARY_OCC_KEYS = ['__typename', 'maxNights', 'minNights', 'price']
 LOCATIONS = []
 HEADERS = {
 'authority': 'www.airbnb.com',
@@ -33,7 +35,18 @@ HEADERS = {
 'sec-fetch-dest': 'empty',
 'accept-language': 'en-US,en;q=0.9,fr;q=0.8',
 }
+PROXY = {'http': 'http://163.116.159.237:8081'}
 
+def find_occupancy(d):
+    if isinstance(d, dict):
+        if "__typename" in d and d["__typename"] == "MerlinCalendarDay":
+            yield d
+        else:
+            for v in d.values():
+                yield from find_occupancy(v)
+    elif isinstance(d, list):
+        for v in d:
+            yield from find_occupancy(v)
 def find_listing(d):
     if isinstance(d, dict):
         if "__typename" in d and d["__typename"] == "ExploreListingItem":
@@ -45,34 +58,43 @@ def find_listing(d):
         for v in d:
             yield from find_listing(v)
 def fetch_listings():            
-    proxy = {'http': 'http://163.116.159.237:8081'}
     itemOffsets = ['0', '20','40', '60', '80']
     listings_each_location = []
     locations = [{'name': 'Georgia, United States', 'id': 'ChIJV4FfHcU28YgR5xBP7BC8hGY'}, {'name': 'North Carolina, United States', 'id': 'ChIJgRo4_MQfVIgRGa4i6fUwP60'}, {'name': 'Florida, United States', 'id': 'ChIJvypWkWV2wYgR0E7HW9MTLvc'}]
     for location in locations:
         session = requests.Session()
-        session.proxies.update(proxy)
+        session.proxies.update(PROXY)
         listings = []
         for item in itemOffsets:
             url = f"http://www.airbnb.com/api/v3/ExploreSections?operationName=ExploreSections&locale=en&currency=USD&_cb=0ludo940w65gdc06ix23q1d1xqve&variables={{\"isInitialLoad\":true,\"hasLoggedIn\":false,\"cdnCacheSafe\":false,\"source\":\"EXPLORE\",\"exploreRequest\":{{\"metadataOnly\":false,\"version\":\"1.8.3\",\"itemsPerGrid\":20,\"propertyTypeId\":[67],\"placeId\":\"{location['id']}\",\"refinementPaths\":[\"/homes\"],\"tabId\":\"home_tab\",\"flexibleTripLengths\":[\"weekend_trip\"],\"datePickerType\":\"calendar\",\"searchType\":\"unknown\",\"federatedSearchSessionId\":\"2312afab-299b-46f2-b7aa-4a16c58269a5\",\"itemsOffset\":{item},\"sectionOffset\":5,\"query\":\"{location['name']}\",\"cdnCacheSafe\":false,\"treatmentFlags\":[\"flex_destinations_june_2021_launch_web_treatment\",\"new_filter_bar_v2_and_fm_treatment\",\"merch_header_breakpoint_expansion_web\",\"flexible_dates_12_month_lead_time\",\"flex_destinations_nov_2021_category_rank_treatment\",\"storefronts_nov23_2021_homepage_web_treatment\",\"flexible_dates_options_extend_one_three_seven_days\",\"super_date_flexibility\",\"micro_flex_improvements\",\"micro_flex_show_by_default\",\"search_input_placeholder_phrases\",\"pets_fee_treatment\"],\"screenSize\":\"small\",\"isInitialLoad\":true,\"hasLoggedIn\":false}}}}&extensions={{\"persistedQuery\":{{\"version\":1,\"sha256Hash\":\"7e6b7107b26522461b789c09daf5988d6fb7ef224420b8023be21e921f99d6f7\"}}}}"
-            # does the proxy actually work? 
-            response = session.get(url, headers=HEADERS, proxies=proxy)
+            # TODO does the proxy actually work? 
+            response = session.get(url, headers=HEADERS)
             data = json.loads(response.text)
             # TODO api duplicates tiny houses in its response for some reason - only fetching first 20.. needs a fix
             gen = find_listing(data)
             for i in range(20):
                 print(f'Extracting listing information for tiny house {i} at {location["name"]}')
                 listing = next(gen)
-                [listing.pop(key) for key in UNNECCESARY_KEYS]
+                [listing.pop(key) for key in UNNECCESARY_LIST_KEYS]
                 listings.append(listing)
         listings_df = pd.DataFrame.from_dict(listings, orient='columns')
         listings_df.set_index('id', inplace=True)
         listings_each_location.append(listings_df)
 
-
     with pd.ExcelWriter('tinyHouses.xlsx') as writer:
         for i, listing_df in enumerate(listings_each_location):
             listing_df.to_excel(writer, index=True, sheet_name=locations[i]['name'])
+
+def fetch_occupancy(id="48105812"):
+    url = f"https://www.airbnb.com/api/v3/PdpAvailabilityCalendar?operationName=PdpAvailabilityCalendar&locale=en&currency=USD&_cb=0k1durf0yuu6g40ksqy0u1ha5jfo&variables={{\"request\":{{\"count\":6,\"listingId\":\"{id}\",\"month\":{datetime.today().month},\"year\":{datetime.today().year}}}}}&extensions={{\"persistedQuery\":{{\"version\":1,\"sha256Hash\":\"8f08e03c7bd16fcad3c92a3592c19a8b559a0d0855a84028d1163d4733ed9ade\"}}}}"
+    data = requests.get(url, proxies=PROXY, headers=HEADERS).json()
+    gen = find_occupancy(data)
+    for occupancy in gen:
+        [occupancy.pop(key) for key in UNNECCESARY_OCC_KEYS]
+        print(occupancy)
+
+if __name__ == "__main__":
+    fetch_occupancy()
 
             
         
