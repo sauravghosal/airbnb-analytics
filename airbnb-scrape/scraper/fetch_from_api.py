@@ -1,9 +1,9 @@
+#!/Users/sauravghosal/.local/share/virtualenvs/airbnb-analytics-mgokF61Z/bin/python
 from datetime import datetime, timedelta, date
-from inspect import cleandoc
 import json
+from pathlib import Path
 from random import randint
 from time import sleep
-from numpy import AxisError
 import pandas as pd 
 import requests
 import requests
@@ -11,7 +11,9 @@ import requests
 
 UNNECCESARY_LIST_KEYS = ['contextualPictures', 'kickerContent', '__typename', 'formattedBadges']
 UNNECCESARY_OCC_KEYS = ['__typename', 'maxNights', 'minNights', 'price']
-LOCATIONS = []
+LOCATIONS = [{'name': 'Georgia, United States', 'id': 'ChIJV4FfHcU28YgR5xBP7BC8hGY'}, 
+             {'name': 'North Carolina, United States', 'id': 'ChIJgRo4_MQfVIgRGa4i6fUwP60'}, 
+             {'name': 'Florida, United States', 'id': 'ChIJvypWkWV2wYgR0E7HW9MTLvc'}]
 HEADERS = {
 'authority': 'www.airbnb.com',
 'pragma': 'no-cache',
@@ -39,6 +41,8 @@ HEADERS = {
 'accept-language': 'en-US,en;q=0.9,fr;q=0.8',
 }
 PROXY = {'http': 'http://163.116.159.237:8081'}
+TINY_HOUSE_FILE = './output_files/tinyHouses.xlsx'
+OCC_FILE = f'./output_files/{date.today():%m-%d-%Y}-occ-data.xlsx'
 
 def find_occupancy(d):
     if isinstance(d, dict):
@@ -60,11 +64,11 @@ def find_listing(d):
     elif isinstance(d, list):
         for v in d:
             yield from find_listing(v)
-def fetch_listings():            
+def fetch_listings():          
     itemOffsets = ['0', '20','40', '60', '80']
     listings_each_location = []
-    locations = [{'name': 'Georgia, United States', 'id': 'ChIJV4FfHcU28YgR5xBP7BC8hGY'}, {'name': 'North Carolina, United States', 'id': 'ChIJgRo4_MQfVIgRGa4i6fUwP60'}, {'name': 'Florida, United States', 'id': 'ChIJvypWkWV2wYgR0E7HW9MTLvc'}]
-    for location in locations:
+    for location in LOCATIONS:
+        print(f'Fetching listings for {location}')  
         session = requests.Session()
         session.proxies.update(PROXY)
         listings = []
@@ -76,7 +80,6 @@ def fetch_listings():
             # TODO api duplicates tiny houses in its response for some reason - only fetching first 20.. needs a fix
             gen = find_listing(data)
             for i in range(20):
-                print(f'Extracting listing information for tiny house {i} at {location["name"]}')
                 listing = next(gen)
                 [listing.pop(key) for key in UNNECCESARY_LIST_KEYS]
                 listings.append(listing)
@@ -84,9 +87,9 @@ def fetch_listings():
         listings_df.set_index('id', inplace=True)
         listings_each_location.append(listings_df)
 
-    with pd.ExcelWriter('tinyHouses.xlsx') as writer:
+    with pd.ExcelWriter(TINY_HOUSE_FILE) as writer:
         for i, listing_df in enumerate(listings_each_location):
-            listing_df.to_excel(writer, index=True, sheet_name=locations[i]['name'])
+            listing_df.to_excel(writer, index=True, sheet_name=LOCATIONS[i]['name'])
 
 def fetch_occupancy(id):
     sleep(randint(2, 30))
@@ -110,8 +113,10 @@ def fetch_occupancy(id):
     return [id, bitmap]
 
 if __name__ == "__main__":
-    # fetch_listings()
-    listing_dfs = pd.read_excel('tinyHouses.xlsx', sheet_name=None)
+    print(f'Beginning parsing for {date.today:%m-%d-%Y}...x')
+    if not Path(TINY_HOUSE_FILE).is_file():
+        fetch_listings()
+    listing_dfs = pd.read_excel(TINY_HOUSE_FILE, sheet_name=None)
     occ_dfs = []
     for loc, df in listing_dfs.items():
         occ = df.apply(lambda row: fetch_occupancy(row['id']), axis=1, result_type='expand')
@@ -119,5 +124,5 @@ if __name__ == "__main__":
         occ.set_index('id', inplace=True)
         occ_dfs.append(occ)
     occ_dfs = pd.concat(occ_dfs)
-    with pd.ExcelWriter(f'{date.today():%m-%d-%Y}-occ-data.xlsx') as writer:
+    with pd.ExcelWriter(OCC_FILE) as writer:
         occ_dfs.to_excel(writer, index=True)
