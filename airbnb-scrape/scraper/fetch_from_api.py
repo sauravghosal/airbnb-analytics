@@ -3,11 +3,15 @@ from datetime import datetime, timedelta, date
 import json
 from pathlib import Path
 from random import randint
+import sys
 from time import sleep
 import pandas as pd 
 import requests
 import requests
+import logging
 
+logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+logger = logging.getLogger()
 
 UNNECCESARY_LIST_KEYS = ['contextualPictures', 'kickerContent', '__typename', 'formattedBadges']
 UNNECCESARY_OCC_KEYS = ['__typename', 'maxNights', 'minNights', 'price']
@@ -40,9 +44,10 @@ HEADERS = {
 'sec-fetch-dest': 'empty',
 'accept-language': 'en-US,en;q=0.9,fr;q=0.8',
 }
+# DOES THIS EVEN WORK???!
 PROXY = {'http': 'http://163.116.159.237:8081'}
-TINY_HOUSE_FILE = './output_files/tinyHouses.xlsx'
-OCC_FILE = f'./output_files/{date.today():%m-%d-%Y}-occ-data.xlsx'
+TINY_HOUSE_FILE = str(Path.joinpath(Path(__file__).parent, 'output_files', 'tinyHouses.xlsx').absolute())
+OCC_FILE = str(Path.joinpath(Path(__file__).parent, 'output_files', f'{date.today():%m-%d-%Y}-occ-data.xlsx').absolute())
 
 def find_occupancy(d):
     if isinstance(d, dict):
@@ -68,7 +73,7 @@ def fetch_listings():
     itemOffsets = ['0', '20','40', '60', '80']
     listings_each_location = []
     for location in LOCATIONS:
-        print(f'Fetching listings for {location}')  
+        logger.info(f'Fetching listings for {location}')  
         session = requests.Session()
         session.proxies.update(PROXY)
         listings = []
@@ -92,8 +97,8 @@ def fetch_listings():
             listing_df.to_excel(writer, index=True, sheet_name=LOCATIONS[i]['name'])
 
 def fetch_occupancy(id):
-    sleep(randint(2, 30))
-    print(f'Fetching occupancy for property {id}')
+    sleep(randint(2, 15))
+    logger.info(f'Fetching occupancy for property {id}')
     url = f"https://www.airbnb.com/api/v3/PdpAvailabilityCalendar?operationName=PdpAvailabilityCalendar&locale=en&currency=USD&_cb=0k1durf0yuu6g40ksqy0u1ha5jfo&variables={{\"request\":{{\"count\":6,\"listingId\":\"{id}\",\"month\":{datetime.today().month},\"year\":{datetime.today().year}}}}}&extensions={{\"persistedQuery\":{{\"version\":1,\"sha256Hash\":\"8f08e03c7bd16fcad3c92a3592c19a8b559a0d0855a84028d1163d4733ed9ade\"}}}}"
     data = requests.get(url, proxies=PROXY, headers=HEADERS).json()
     gen = find_occupancy(data)
@@ -113,7 +118,7 @@ def fetch_occupancy(id):
     return [id, bitmap]
 
 if __name__ == "__main__":
-    print(f'Beginning parsing for {date.today:%m-%d-%Y}...x')
+    logger.info(f'Beginning scraping for {date.today():%m-%d-%Y}...')
     if not Path(TINY_HOUSE_FILE).is_file():
         fetch_listings()
     listing_dfs = pd.read_excel(TINY_HOUSE_FILE, sheet_name=None)
@@ -126,3 +131,4 @@ if __name__ == "__main__":
     occ_dfs = pd.concat(occ_dfs)
     with pd.ExcelWriter(OCC_FILE) as writer:
         occ_dfs.to_excel(writer, index=True)
+    logger.info('Scraping complete!')
