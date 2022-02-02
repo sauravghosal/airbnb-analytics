@@ -2,6 +2,7 @@
 *.csv
 airbnb-scrape/.aws-sam
 airbnb-scrape/scraper/chromedriver
+airbnb-scrape/scraper/bin
 template.yaml
 .vscode
 __pycache__
