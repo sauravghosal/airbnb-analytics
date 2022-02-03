@@ -56,7 +56,7 @@ HEADERS = {
 PROXY = {'http': 'http://163.116.159.237:8081'}
 TINY_HOUSE_FILE = str(Path.joinpath(Path(__file__).parent, 'output_files', 'tinyHouses.xlsx').absolute())
 OCC_FILE = str(Path.joinpath(Path(__file__).parent, 'output_files', f'{date.today():%m-%d-%Y}-occ-data.xlsx').absolute())
-OCC_FILE_DROPBOX = f'/Python Projects/Tiny House Scrape Data/tinyHouses.xlsx'
+OCC_FILE_DROPBOX = f'/Python Projects/Tiny House Scrape Data/{date.today():%m-%d-%Y}-occ-data.xlsx'
 def find_occupancy(d):
     if isinstance(d, dict):
         if "__typename" in d and d["__typename"] == "MerlinCalendarDay":
