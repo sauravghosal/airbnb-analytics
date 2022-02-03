@@ -1,6 +1,8 @@
 #!/Users/sauravghosal/.local/share/virtualenvs/airbnb-analytics-mgokF61Z/bin/python
 from datetime import datetime, timedelta, date
+from io import BytesIO
 import json
+import os
 from pathlib import Path
 from random import randint
 import sys
@@ -9,9 +11,15 @@ import pandas as pd
 import requests
 import requests
 import logging
+import dropbox
+from dotenv import load_dotenv
 
+load_dotenv()
+
+DROPBOX_ACCESS_TOKEN = os.environ['DROPBOX_ACCESS_TOKEN']
 logging.basicConfig(level=logging.INFO, stream=sys.stdout)
 logger = logging.getLogger()
+dbx = dropbox.Dropbox(DROPBOX_ACCESS_TOKEN)
 
 UNNECCESARY_LIST_KEYS = ['contextualPictures', 'kickerContent', '__typename', 'formattedBadges']
 UNNECCESARY_OCC_KEYS = ['__typename', 'maxNights', 'minNights', 'price']
@@ -48,7 +56,7 @@ HEADERS = {
 PROXY = {'http': 'http://163.116.159.237:8081'}
 TINY_HOUSE_FILE = str(Path.joinpath(Path(__file__).parent, 'output_files', 'tinyHouses.xlsx').absolute())
 OCC_FILE = str(Path.joinpath(Path(__file__).parent, 'output_files', f'{date.today():%m-%d-%Y}-occ-data.xlsx').absolute())
-
+OCC_FILE_DROPBOX = f'/Python Projects/Tiny House Scrape Data/tinyHouses.xlsx'
 def find_occupancy(d):
     if isinstance(d, dict):
         if "__typename" in d and d["__typename"] == "MerlinCalendarDay":
@@ -129,6 +137,9 @@ if __name__ == "__main__":
         occ.set_index('id', inplace=True)
         occ_dfs.append(occ)
     occ_dfs = pd.concat(occ_dfs)
-    with pd.ExcelWriter(OCC_FILE) as writer:
+    io = BytesIO()
+    with pd.ExcelWriter(io, engine='xlsxwriter') as writer:
         occ_dfs.to_excel(writer, index=True)
+    io.seek(0)
+    dbx.files_upload(io.read(), OCC_FILE_DROPBOX)
     logger.info('Scraping complete!')
