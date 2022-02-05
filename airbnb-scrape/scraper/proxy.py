@@ -22,6 +22,35 @@ def scrape_proxy_list_servers(proxy_list_url='https://www.us-proxy.org/') -> Lis
         if tds[4].get_text().lower() == "elite proxy":
             proxy_servers.append({'ip': tds[0].get_text(), 'port': tds[1].get_text()})
     return proxy_servers
+
+def scrape_free_proxy_servers(url='http://free-proxy.cz/en/proxylist/country/all/all/ping/level1'):
+    for i in range(1, 2):
+        try:
+            new_url = f'{url}/{i}'
+            content = requests.get(new_url).content
+            soup = BeautifulSoup(content, 'html.parser')
+            table = soup.find(id='proxy_list')
+            trs = table.find_all('tr')
+            proxy_servers = []
+            for tr in trs[1:]:
+                tds = tr.find_all('td')
+                if len(tds) == 11:
+                    ip = tds[0].find('script').text
+                    ip = base64.b64decode(ip[ip.find("(\"")+2:ip.find("\")")]).decode('utf-8')
+                    port = tds[1].get_text()
+                    proxy_servers.append({'ip': ip, 'port': port})
+        except Exception as e:
+            print(e)
+            break
+    return proxy_servers
+
+def get_lime_proxies():
+    proxies = []
+    with open('./proxies.txt') as txt:
+        for line in txt:
+            proxies.append({'https': line[:5] + "//" + line[5:-1]})
+    return proxies
+        
     
 def test_proxy_server(proxy_config:dict):
     from airbnb_parser import get_driver
@@ -37,8 +66,8 @@ def test_proxy_server(proxy_config:dict):
         
 
 if __name__ == "__main__":
-    proxy_servers = find_successful_proxy_servers('https://www.us-proxy.org/')
-    print(proxy_servers)
+    proxies = get_lime_proxies()
+    print(requests.get('https://www.airbnb.com', proxies=proxies[0]).content)
    
 
     
