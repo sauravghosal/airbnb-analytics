@@ -23,7 +23,7 @@ dbx = dropbox.Dropbox(DROPBOX_ACCESS_TOKEN)
 if logging.getLogger().hasHandlers():
     logging.getLogger().setLevel(logging.INFO)
 else: 
-    logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S', stream=sys.stdout)
 logger = logging.getLogger()
 
 UNNECCESARY_LIST_KEYS = ['contextualPictures', 'kickerContent', '__typename', 'formattedBadges']
