@@ -1,4 +1,3 @@
-#!/Users/sauravghosal/.local/share/virtualenvs/airbnb-analytics-mgokF61Z/bin/python
 from datetime import datetime, timedelta, date
 from io import BytesIO
 from itertools import cycle
@@ -19,6 +18,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 DROPBOX_ACCESS_TOKEN = os.environ['DROPBOX_ACCESS_TOKEN']
+os.environ['TZ'] = 'America/New_York'
+
 dbx = dropbox.Dropbox(DROPBOX_ACCESS_TOKEN)
 if logging.getLogger().hasHandlers():
     logging.getLogger().setLevel(logging.INFO)
