@@ -69,6 +69,3 @@ if __name__ == "__main__":
     proxies = get_lime_proxies()
     print(requests.get('https://www.airbnb.com', proxies=proxies[0]).content)
    
-
-    
-    

@@ -10,4 +10,4 @@ RUN chmod 755 /bin/chromedriver
 COPY app.py airbnb_parser.py requirements.txt ./
 
 # Command can be overwritten by providing a different command in the template directly.
-CMD ["app.lambda_handler"]
+CMD ["app.handler"]

@@ -1,22 +1,26 @@
 from datetime import date
+from typing import List
 from bs4 import BeautifulSoup
-from pandas.core import base
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.proxy import Proxy, ProxyType
-from proxy import find_proxy_servers
+from proxy import scrape_free_proxy_servers
 import json
-import re
+import logging
+import getpass
 import os
+import sys
+import random
 import pandas as pd
 from multiprocessing import Pool
 
-
+logging.basicConfig(level=logging.INFO, stream=sys.stdout)
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
 
 RULES_SEARCH_PAGE = {
     'url': {'tag': 'a', 'get': 'href'},
@@ -47,54 +51,53 @@ RULES_AMENITIES_PAGE = {
 
 }
 
-
-
-def count_invocations(f):
-    def wrapped(*args, **kwargs):
-        wrapped.calls += 1
-        return f(*args, **kwargs)
-    wrapped.calls = 0
-    return wrapped
-
-
 def get_driver(config: dict) -> WebDriver:
+    
     options = Options()
     options.add_argument('--blink-settings=imagesEnabled=false')
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--disable-gpu')
     options.add_argument('--no-sandbox')
-    options.add_argument('--headless')
+    if 'headless' in config and config['headless']:
+        options.add_argument('--headless')
+    if getpass.getuser() != 'sauravghosal':
+        options.binary_location = '/bin/headless-chromium'
+        executable_path = '/bin/chromedriver'
+    else:
+        executable_path = './chromedriver'
     if 'ip' in config and 'port' in config:
         prox = Proxy()
         prox.proxy_type = ProxyType.MANUAL
         prox.ssl_proxy = f'{config["ip"]}:{config["port"]}'
         capabilities = webdriver.DesiredCapabilities.CHROME
+        capabilities['acceptSslCerts'] = True
         prox.add_to_capabilities(capabilities)
-        return webdriver.Chrome(options=options, executable_path="./chromedriver", desired_capabilities=capabilities)
-    return webdriver.Chrome(options=options, executable_path="./chromedriver")
+        return webdriver.Chrome(options=options, executable_path=executable_path, desired_capabilities=capabilities)
+    return webdriver.Chrome(options=options, executable_path=executable_path)
 
-def extract_listings(page_url, proxy_config, attempts=10, timeout=20):
+def extract_listings(page_url, proxy_config, timeout=20):
     """Extracts all listings from a given page"""
+    logger.info(f'Using proxy {proxy_config["ip"]}:{proxy_config["port"]}')
     listings_max = 0
-    listings_out = [BeautifulSoup('', features='html.parser')]
-    for _ in range(attempts):
-        driver = get_driver(proxy_config)
-        try:
-            driver.get(page_url)
-            WebDriverWait(driver, timeout).until(EC.presence_of_element_located((By.XPATH, "//div[contains(@itemprop, 'itemListElement')]")))
-            soup = BeautifulSoup(driver.page_source, features='html.parser')
-            listings = soup.find_all('div', {'itemprop': 'itemListElement'})
-            if len(listings) == 20:
-                listings_out = listings
-                break
-            if len(listings) >= listings_max:
-                listings_max = len(listings)
-                listings_out = listings
-        except:
-            # if no response - return a list with an empty soup
-            listings = [BeautifulSoup('', features='html.parser')]
-        finally:
-            driver.quit()
+    listings_out = None
+    driver = get_driver(proxy_config)
+    try:
+        driver.get(page_url)
+        WebDriverWait(driver, timeout).until(EC.presence_of_element_located((By.XPATH, "//div[contains(@itemprop, 'itemListElement')]")))
+        soup = BeautifulSoup(driver.page_source, features='html.parser')
+        listings = soup.find_all('div', {'itemprop': 'itemListElement'})
+        if len(listings) == 20:
+            listings_out = listings
+        if len(listings) >= listings_max:
+            listings_max = len(listings)
+            listings_out = listings
+    except Exception as e:
+        logger.error(e)
+        raise TimeoutError
+    finally:
+        driver.quit()
+        if not listings_out:
+            raise TimeoutError
     return listings_out
         
         
@@ -141,7 +144,6 @@ def extract_listing_features(soup, rules):
     return features_dict
 
 
-
 # updates the occupancies dict with the bitmaps for the next 2 months 
 # with 1s corresponding to booked days and 0s corresponding to available days
 def scrape_months(page: bytes, occupancies: dict):
@@ -164,20 +166,31 @@ def scrape_months(page: bytes, occupancies: dict):
         occupancies[months[index]] = bitmap
         
 
-def extract_soup_js_and_occupancy_data(url: str, proxy_config: dict, timeout = [20, 20]):
-    driver = get_driver(proxy_config)
-    try:
-        driver.get(url)
-        calendar_next = WebDriverWait(driver, timeout[0]).until(EC.element_to_be_clickable((By.XPATH, "(//div[@class='_1w1t1f4']//span[@class='_e296pg'])[2]")))
-        occupancies = dict()
-        for _ in range(0, 10):
-            WebDriverWait(driver, timeout[0]).until(EC.presence_of_element_located((By.XPATH, "//div[@class='_1w1t1f4']//div[@class='_fdp53bg']")))
-            scrape_months(driver.page_source, occupancies)
-            calendar_next.click()
-        # General listing details page
-        detail_page = driver.page_source
-    except Exception as e:
-        raise TimeoutError('Connection Refused')
+# TODO: if connection refused, skip that proxy
+def extract_soup_js_and_occupancy_data(url: str, proxies: List, index: int, timeout = [20, 20]):
+    # iterating through until finds proxy in list that works
+    detail_page = None
+    iterations = 1
+    while not detail_page and iterations < len(proxies):
+        proxy_config = proxies[(index + iterations) % len(proxies)]
+        proxy_config['headless'] = True
+        logger.info(f"Processing detail page {index} with proxy {proxy_config['ip']}:{proxy_config['port']} on processs {os.getpid()}")
+        driver = get_driver(proxy_config)
+        try:
+            driver.get(url)
+            calendar_next = WebDriverWait(driver, timeout[0]).until(EC.element_to_be_clickable((By.XPATH, "(//div[@class='_1w1t1f4']//span[@class='_e296pg'])[2]")))
+            occupancies = dict()
+            for _ in range(0, 10):
+                WebDriverWait(driver, timeout[0]).until(EC.presence_of_element_located((By.XPATH, "//div[@class='_1w1t1f4']//div[@class='_fdp53bg']")))
+                scrape_months(driver.page_source, occupancies)
+                calendar_next.click()
+            detail_page = driver.page_source
+        except Exception as e:
+            logger.error(e)
+            driver.quit()
+            iterations += 1
+    if not detail_page:
+        raise TimeoutError("All proxies timed out for detail page request")
     try: 
         # Launches amenities modal
         # TODO needs debugging for when the button a tag element is not clickable... don't know why this occurs
@@ -186,15 +199,15 @@ def extract_soup_js_and_occupancy_data(url: str, proxy_config: dict, timeout = [
         amenities_modal = WebDriverWait(driver, timeout[1]).until(EC.presence_of_element_located(((By.XPATH, "//div[@class='_17itzz4']//section")))).get_attribute('outerHTML')
         return dict(detail=BeautifulSoup(detail_page, features='html.parser'), amenities=BeautifulSoup(amenities_modal, features='html.parser'), occupancy=dict(occupancies=occupancies))
     except Exception as e:
-        print(e)
+        logger.error(e)
     finally:
         driver.quit()
-    return dict(detail=BeautifulSoup(detail_page, features='html.parser'), occupancy=dict(occupancies=occupancies))
+    return dict(detail=BeautifulSoup(detail_page, features='html.parser'), occupancy=occupancies)
 
-def scrape_detail_page(base_features, proxy_config: dict):
+def scrape_detail_page(base_features, proxies, index):
     """Scrapes the detail page and merges the result with basic features"""
     detailed_url = 'https://www.airbnb.com' + base_features['url']
-    detail_page_info = extract_soup_js_and_occupancy_data(detailed_url, proxy_config)
+    detail_page_info = extract_soup_js_and_occupancy_data(detailed_url, proxies, index)
 
     features_detailed = extract_listing_features(detail_page_info.get('detail'), RULES_DETAIL_PAGE)
     
@@ -210,27 +223,30 @@ class Parser:
     def __init__(self, link, out_file):
         self.link = link
         self.out_file = out_file
-        self.proxies = find_proxy_servers('https://www.us-proxy.org/')
+        self.proxies = scrape_free_proxy_servers()
 
     
-    def build_urls(self, listings_per_page=20, pages_per_location=2):
+    def build_urls(self, listings_per_page=20, pages_per_location=3):
         """Builds links for all search pages for a given location"""
+        logger.info(f"Initiating parsing job for {self.link}")
         url_list = []
         for i in range(pages_per_location):
             offset = listings_per_page * i
             url_pagination = self.link + f'&items_offset={offset}'
             url_list.append(url_pagination)
             self.url_list = url_list
+        print(self.url_list)
 
 
     def process_search_pages(self):
         """Extract features from all search pages"""
         features_list = []
         for index, page in enumerate(self.url_list):
-            print(f'Extracting listings from page {index + 1}')
+            logger.info(f'Extracting listings from page {index + 1}')
             listings = None
             i = index
-            while listings is None:
+            random.shuffle(self.proxies)
+            while not listings and i < len(self.proxies):
                 proxy_config = self.proxies[i % len(self.proxies)]
                 proxy_config['headless'] = False
                 try: 
@@ -241,16 +257,19 @@ class Parser:
                 features = extract_listing_features(listing, RULES_SEARCH_PAGE)
                 features['sp_url'] = self.link
                 features_list.append(features)
-                print(f"Extracted features from listing {features['url']}")
+                logger.info(f"Extracted features from listing {features['url']}")
         self.base_features_list = features_list
         
 
     def process_detail_pages(self):
         """Runs detail pages processing in parallel"""
         n_pools = os.cpu_count() // 2
+        # TODO cycle through proxies if one child process encounters an error
+        random.shuffle(self.proxies)
         with Pool(n_pools) as pool:
-            params = [(feature, self.proxies[index % len(self.proxies)]) for index, feature in enumerate(self.base_features_list)]
-            result = pool.starmap(scrape_detail_page, params)
+            params = [(feature, self.proxies, index) for index, feature in enumerate(self.base_features_list)]
+            # TODO add in error handling if unable to scrape detail page
+            result = pool.starmap_async(scrape_detail_page, params).get()
         self.all_features_list = result
 
 
@@ -260,10 +279,9 @@ class Parser:
         elif feature_set == 'all':
             all_features_list_df = pd.DataFrame(self.all_features_list)
             with pd.ExcelWriter(self.out_file) as writer:
-                for house in all_features_list_df['name']:
-                    all_features_list_df.loc[all_features_list_df["name"] == house].to_excel(writer, sheet_name=re.sub(r'[^a-zA-z0-9 ]+', "", house), index=False)
-        else:
-            pass
+                all_features_list_df.to_excel(writer, index=False)
+        logger.info(f"Parsing complete: writing to file")
+
             
         
     def parse(self):
