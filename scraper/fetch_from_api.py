@@ -7,7 +7,7 @@ from pathlib import Path
 from proxy import get_lime_proxies
 from random import randint
 import sys
-from time import sleep
+from time import sleep, tzset
 import pandas as pd 
 import requests
 import requests
@@ -19,6 +19,7 @@ load_dotenv()
 
 DROPBOX_ACCESS_TOKEN = os.environ['DROPBOX_ACCESS_TOKEN']
 os.environ['TZ'] = 'America/New_York'
+tzset()
 
 dbx = dropbox.Dropbox(DROPBOX_ACCESS_TOKEN)
 if logging.getLogger().hasHandlers():
@@ -98,6 +99,7 @@ def fetch_listings():
                 listings.append(listing)
         listings_df = pd.DataFrame.from_dict(listings, orient='columns')
         listings_df.set_index('id', inplace=True)
+        listings_df['location_id'] = location['id']
         listings_each_location.append(listings_df)
 
     with pd.ExcelWriter(TINY_HOUSE_FILE) as writer:
