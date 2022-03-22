@@ -13,6 +13,9 @@ dropbox = "*"
 python-dotenv = "*"
 xlsxwriter = "*"
 numpy = "<=1.21.5"
+sqlalchemy = "*"
+pymysql = "*"
+sqlalchemy-utils = "*"
 
 [dev-packages]
 ipykernel = "*"
