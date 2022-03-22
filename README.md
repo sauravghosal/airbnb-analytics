@@ -1,26 +1,19 @@
-# Educational project about Data Science
-*We're implementing an example Data Science project from scratch using the Airbnb website as a data source.*
+# Airbnb Scraper
 
-#### Project steps:
-1) Scrape the listings data from the website
-2) Explore and clean the data set
-3) Build a machine learning model for listing price prediction
-4) Based on the model, develop a tool (e.g. Chrome extension) to help users navigate
+### Purpose
 
-#### Series of articles on [Medium](https://smithio.medium.com):
-- [Part 0 - Intro to the project](https://smithio.medium.com/educational-data-science-project-b4f54c7cab19)
-- [Part 1 - Scrape the data from Airbnb website](https://smithio.medium.com/scraping-airbnb-website-with-python-beautiful-soup-and-selenium-8ec86e327b6c)
-- [Part 2 - More details to Web Scraping](https://smithio.medium.com/more-details-to-web-scraping-with-python-and-selenium-c32ac614c558)
+The purpose of this project is to scrape occupancy, pricing, and other related listing data for tiny houses that are available on AirBnb. [This link](https://www.airbnb.com/stays/tiny-houses) provides an overview of the tiny house listings, as well as the most popular locations on Airbnb.
 
-#### Webinars on [Youtube](https://www.youtube.com/channel/UCQZNnzybEi0vvNbeDB0qABQ):
-- [Scraping Airbnb website with Python and Beautiful Soup](https://youtu.be/B7uOXdHc8jc)
-- [Scraping Airbnb website with Python and Selenium](https://youtu.be/L8ooiuBnZ8M)
-- [Airbnb data cleaning](https://www.youtube.com/watch?v=6iJ8MMDNQ9c&t=86s)
+### Approach
 
-#### Authors
+This scraper hits Airbnb's API to query for tiny house listing data. The first API fetches the names of the top listings for each location, which I selected as Florida, Georgia, and North Carolina, along with basic listing info, like bedrooms, baths, reviews, amenities, city, and superhost status. This API is only hit once to receive the initial tiny houses for which to track occupancy. I have capped the number of tiny houses for which to track occupancy at 100 per location; thus, 100 x 3 yields tracking for 300 tiny houses.
 
-- [Igor Smirnov](https://github.com/smithio)
+The second API fetches the occupancy data for a particular listing. This API is hit every day through a cron job that runs at 8 pm on an Amazon EC2 instance. Currently, we do not fetch pricing data, which would be a good extension to this project. The data is written to an Excel spreadsheet that is uploaded to a shared Dropbox folder so that clients can see the program running every night as expected; however, this will be removed soon to allow for the data to be directly ingested into an AWS RDS database.
 
-![igor photo](https://github.com/x-technology/PizzaScript/blob/main/assets/igor-small.jpg)
+### Database Schema
 
-A data scientist with more than 10 years of industry experience performing data analysis. Since 2015 is more focused on b2c domain. Loves the customers
+TODO: insert image
+
+### Website
+
+Visit [this website](http://ghosalre.com/) for visualizations on this data!
