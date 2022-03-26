@@ -14,6 +14,7 @@ import requests
 import logging
 import dropbox
 from dotenv import load_dotenv
+from db import insert_occupancy
 
 load_dotenv()
 
@@ -53,7 +54,6 @@ HEADERS = {
 'sec-fetch-dest': 'empty',
 'accept-language': 'en-US,en;q=0.9,fr;q=0.8',
 }
-# DOES THIS EVEN WORK???!
 PROXIES = cycle(get_lime_proxies())
 TINY_HOUSE_FILE = str(Path.joinpath(Path(__file__).parent, 'output_files', 'tinyHouses.xlsx').absolute())
 OCC_FILE = str(Path.joinpath(Path(__file__).parent, 'output_files', f'{date.today():%m-%d-%Y}-occ-data.xlsx').absolute())
@@ -71,6 +71,7 @@ def find_occupancy(d):
 def find_listing(d):
     if isinstance(d, dict):
         if "__typename" in d and d["__typename"] == "ExploreListingItem":
+            d['listing']['price'] = d['pricingQuote']['rate']['amount']
             yield d["listing"]
         else:
             for v in d.values():
@@ -88,7 +89,6 @@ def fetch_listings():
         listings = []
         for item in itemOffsets:
             url = f"http://www.airbnb.com/api/v3/ExploreSections?operationName=ExploreSections&locale=en&currency=USD&_cb=0ludo940w65gdc06ix23q1d1xqve&variables={{\"isInitialLoad\":true,\"hasLoggedIn\":false,\"cdnCacheSafe\":false,\"source\":\"EXPLORE\",\"exploreRequest\":{{\"metadataOnly\":false,\"version\":\"1.8.3\",\"itemsPerGrid\":20,\"propertyTypeId\":[67],\"placeId\":\"{location['id']}\",\"refinementPaths\":[\"/homes\"],\"tabId\":\"home_tab\",\"flexibleTripLengths\":[\"weekend_trip\"],\"datePickerType\":\"calendar\",\"searchType\":\"unknown\",\"federatedSearchSessionId\":\"2312afab-299b-46f2-b7aa-4a16c58269a5\",\"itemsOffset\":{item},\"sectionOffset\":5,\"query\":\"{location['name']}\",\"cdnCacheSafe\":false,\"treatmentFlags\":[\"flex_destinations_june_2021_launch_web_treatment\",\"new_filter_bar_v2_and_fm_treatment\",\"merch_header_breakpoint_expansion_web\",\"flexible_dates_12_month_lead_time\",\"flex_destinations_nov_2021_category_rank_treatment\",\"storefronts_nov23_2021_homepage_web_treatment\",\"flexible_dates_options_extend_one_three_seven_days\",\"super_date_flexibility\",\"micro_flex_improvements\",\"micro_flex_show_by_default\",\"search_input_placeholder_phrases\",\"pets_fee_treatment\"],\"screenSize\":\"small\",\"isInitialLoad\":true,\"hasLoggedIn\":false}}}}&extensions={{\"persistedQuery\":{{\"version\":1,\"sha256Hash\":\"7e6b7107b26522461b789c09daf5988d6fb7ef224420b8023be21e921f99d6f7\"}}}}"
-            # TODO does the proxy actually work? 
             response = session.get(url, headers=HEADERS)
             data = json.loads(response.text)
             # TODO api duplicates tiny houses in its response for some reason - only fetching first 20.. needs a fix
@@ -147,8 +147,10 @@ def fetch():
         occ_dfs.to_excel(writer, index=True)
     io.seek(0)
     dbx.files_upload(io.read(), OCC_FILE_DROPBOX)
+    io.seek(0)
+    insert_occupancy(io, date.today())
     logger.info('Scraping complete!')
 
 
 if __name__ == "__main__":
-    fetch()
+    print(fetch_occupancy(25975040))
