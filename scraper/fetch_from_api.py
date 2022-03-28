@@ -153,4 +153,4 @@ def fetch():
 
 
 if __name__ == "__main__":
-    print(fetch_occupancy(25975040))
+    fetch()
