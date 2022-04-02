@@ -16,6 +16,7 @@ numpy = "<=1.21.5"
 sqlalchemy = "*"
 pymysql = "*"
 sqlalchemy-utils = "*"
+alembic = "*"
 
 [dev-packages]
 ipykernel = "*"
