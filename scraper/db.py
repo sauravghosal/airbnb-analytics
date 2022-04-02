@@ -87,6 +87,7 @@ class ListingOccupancy(Base):
     listing = relationship('Listing', back_populates='occupancy')
     date = Column(Date, primary_key=True, autoincrement=False)
     bitmap = Column(String(255))
+    price = Column(Integer)
     
     
 def dir_path(path):
