@@ -14,7 +14,7 @@ import requests
 import logging
 import dropbox
 from dotenv import load_dotenv
-from db import insert_occupancy
+from db import query_all_listings_id, insert_listings_in_memory, bulk_insert_listing_occupancies_in_memory, ListingOccupancy
 
 load_dotenv()
 
@@ -92,19 +92,13 @@ def fetch_listings():
             response = session.get(url, headers=HEADERS)
             data = json.loads(response.text)
             # TODO api duplicates tiny houses in its response for some reason - only fetching first 20.. needs a fix
-            gen = find_listing(data)
-            for i in range(20):
-                listing = next(gen)
-                [listing.pop(key) for key in UNNECCESARY_LIST_KEYS]
-                listings.append(listing)
+            listings.extend(list(find_listing(data)))
         listings_df = pd.DataFrame.from_dict(listings, orient='columns')
         listings_df.set_index('id', inplace=True)
         listings_df['location_id'] = location['id']
         listings_each_location.append(listings_df)
-
-    with pd.ExcelWriter(TINY_HOUSE_FILE) as writer:
-        for i, listing_df in enumerate(listings_each_location):
-            listing_df.to_excel(writer, index=True, sheet_name=LOCATIONS[i]['name'])
+    listings = pd.concat(listings_each_location, axis=0)
+    return listings
 
 def fetch_occupancy(id):
     sleep(randint(2, 15))
@@ -132,23 +126,16 @@ def fetch_occupancy(id):
 
 def fetch():
     logger.info(f'Beginning scraping for {date.today():%m-%d-%Y}...')
-    if not Path(TINY_HOUSE_FILE).is_file():
-        fetch_listings()
-    listing_dfs = pd.read_excel(TINY_HOUSE_FILE, sheet_name=None)
-    occ_dfs = []
-    for loc, df in listing_dfs.items():
-        occ = df.apply(lambda row: fetch_occupancy(row['id']), axis=1, result_type='expand')
-        occ.columns = ['id', 'bitmap']
-        occ.set_index('id', inplace=True)
-        occ_dfs.append(occ)
-    occ_dfs = pd.concat(occ_dfs)
-    io = BytesIO()
-    with pd.ExcelWriter(io, engine='xlsxwriter') as writer:
-        occ_dfs.to_excel(writer, index=True)
-    io.seek(0)
-    dbx.files_upload(io.read(), OCC_FILE_DROPBOX)
-    io.seek(0)
-    insert_occupancy(io, date.today())
+    listing_updates = fetch_listings()
+    insert_listings_in_memory(listing_updates)
+    all_listing_ids = query_all_listings_id()
+    all_listing_occupancies = []
+    for listing_id in all_listing_ids:
+        listing_id = listing_id['id']
+        result = fetch_occupancy(listing_id)
+        occ = ListingOccupancy(listing_id=listing_id, bitmap=result[1], date=date.today())
+        all_listing_occupancies.append(occ)
+    bulk_insert_listing_occupancies_in_memory(all_listing_occupancies)
     logger.info('Scraping complete!')
 
 

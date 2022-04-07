@@ -3,10 +3,13 @@ from datetime import datetime
 from glob import glob
 import logging
 import os
+from typing import List
+from dotenv import load_dotenv
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Column, String, Integer, SmallInteger, Boolean, create_engine, ForeignKey, Date, Float, BigInteger, exc
 from sqlalchemy.orm import relationship, sessionmaker, Session as SessionType
 from sqlalchemy_utils import create_database, database_exists
+from sqlalchemy.dialects.mysql import insert
 import ast
 import pandas as pd
 import sys
@@ -15,6 +18,8 @@ MAX_INT = 2147483647
 LOCATIONS = [{'name': 'Georgia, United States', 'id': 'ChIJV4FfHcU28YgR5xBP7BC8hGY'}, 
              {'name': 'North Carolina, United States', 'id': 'ChIJgRo4_MQfVIgRGa4i6fUwP60'}, 
              {'name': 'Florida, United States', 'id': 'ChIJvypWkWV2wYgR0E7HW9MTLvc'}]
+
+load_dotenv()
 
 if os.environ.get('python_env') == 'production':
     db_user = os.environ.get('DB_USER')
@@ -37,7 +42,7 @@ Session = sessionmaker(bind=engine, expire_on_commit=False)
 if logging.getLogger().hasHandlers():
     logging.getLogger().setLevel(logging.INFO)
 else: 
-    logging.basicConfig(level=logging.ERROR, format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S', stream=sys.stdout)
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)-8s %(message)s', datefmt='%Y-%m-%d %H:%M:%S', stream=sys.stdout)
 logger = logging.getLogger()
 
 if not database_exists(engine.url):
@@ -61,7 +66,7 @@ class Listing(Base):
     
     id = Column(BigInteger, primary_key=True, autoincrement=False)
     location_id = Column(String(75), ForeignKey('location.id'))
-    location = relationship("Location", back_populates="listing")
+    location = relationship("Location", back_populates="listing", lazy='joined')
     occupancy = relationship('ListingOccupancy', back_populates='listing')
     city = Column(String(75))
     guests = Column(SmallInteger)
@@ -78,16 +83,19 @@ class Listing(Base):
 
     
     def __repr__(self) -> str:
-        return f"<Location(id={self.id}, superHost={self.superhost}), city={self.city}, location={self.location_id}>"
+        return f"<Listing(id={self.id}, superHost={self.superhost}), city={self.city}, location={self.location_id}>"
 
 class ListingOccupancy(Base):
     __tablename__ = 'listing_occupancy'
     
     listing_id = Column(BigInteger, ForeignKey('listing.id'), primary_key=True, autoincrement=False)
-    listing = relationship('Listing', back_populates='occupancy')
+    listing = relationship("Listing", back_populates="occupancy")
     date = Column(Date, primary_key=True, autoincrement=False)
     bitmap = Column(String(255))
     price = Column(Integer)
+    
+    def __repr__(self) -> str:
+        return f"<ListingOccupancy(listing_id={self.listing_id}, date={self.date}), bitmap={self.bitmap}, price={self.price}>"
     
     
 def dir_path(path):
@@ -112,7 +120,7 @@ def insert_locations():
         logger.error(e)
   
 def get_baths(row):
-    baths = ast.literal_eval(row['homeDetails'])[3]['title']
+    baths = row['homeDetails'][3]['title']
     if baths:
         try:
             return float(baths.split()[0])
@@ -121,6 +129,26 @@ def get_baths(row):
             if baths.lower() == 'half-bath':
                 return 0.5
     return 0
+
+def update_on_duplicate(table, conn, keys, data_iter):
+    insert_stmt = insert(table.table).values(list(data_iter))
+    on_duplicate_key_stmt = insert_stmt.on_duplicate_key_update(insert_stmt.inserted)
+    conn.execute(on_duplicate_key_stmt)
+    
+def insert_listings_in_memory(all_listings: pd.DataFrame):
+    try:
+        with engine.begin() as conn: 
+            all_listings.rename(columns={'avgRating': 'rating', 'isSuperhost': 'superhost', 'reviewsCount': 'reviews_count', 'personCapacity': 'person_capacity'}, inplace=True)
+            all_listings['city'] = all_listings.apply(lambda row: row['overview'][1]['title'], axis=1)
+            all_listings['guests'] = all_listings.apply(lambda row: int(row['homeDetails'][0]['title'].split()[0]), axis=1)
+            all_listings['bedrooms'] = all_listings.apply(lambda row: row['homeDetails'][1]['title'], axis=1)
+            all_listings['beds'] = all_listings.apply(lambda row: int(row['homeDetails'][2]['title'].split()[0]) if row['homeDetails'][2]['title'] else 0, axis=1)
+            all_listings['baths'] = all_listings.apply(get_baths, axis=1)
+            all_listings = all_listings[all_listings.columns.intersection(vars(Listing))]
+            all_listings.to_sql('listing', conn, index=True, if_exists='append', method=update_on_duplicate)
+    except Exception as e:
+        logger.error(e)
+    
 def insert_listings(root_dir):
     try:
         with engine.begin() as conn: 
@@ -137,6 +165,7 @@ def insert_listings(root_dir):
                 listings.to_sql('listing', conn, index=False, if_exists='append')
     except Exception as e:
         logger.error(e)
+        
 def insert_occupancy(io, date):
     try:
         with engine.begin() as conn:
@@ -147,12 +176,26 @@ def insert_occupancy(io, date):
             occupancies.to_sql('listing_occupancy', conn, index=False, if_exists='append')
     except Exception as e:
         logger.error(e)
-  
+
+def bulk_insert_listing_occupancies_in_memory(listing_occupancies: List[ListingOccupancy]):
+    try: 
+        with Session.begin() as session:
+            session.bulk_save_objects(listing_occupancies)
+    except Exception as e:
+        logger.error(e)
+ 
+def query_all_listings_id():
+    try:
+        with Session.begin() as session:
+            q = session.query(Listing.id)
+            return q.all()
+    except Exception as e:
+        logger.error(e)
+        
 def query_all_superhosts():
-    with Session() as session:
+    with Session.begin() as session:
         q = session.query(Listing).filter(Listing.superhost == 1)
         return q.all()
-
 
 def insert_all_occupancies(root_dir): 
     for file in glob(root_dir + '/*-occ-data.xlsx'):
